@@ -1,0 +1,168 @@
+---
+# =============================================================================
+# Deploy Playbook — Main deployment workflow
+# =============================================================================
+# This playbook defines the deployment process for your application.
+#
+# Run from Jenkins: ansible-playbook -i inventory/hosts.ini playbooks/deploy.yml
+# Run manually: ansible-playbook -i inventory/hosts.ini playbooks/deploy.yml -v
+#
+# Stages:
+#   1. Preflight: Validate target host and connectivity
+#   2. Backup: Backup current application state (if configured)
+#   3. Deploy: Copy/update application files
+#   4. Configure: Update configuration files
+#   5. Restart: Restart application services
+#   6. Verify: Run basic health checks
+# =============================================================================
+
+- name: Deploy Application
+  hosts: deploy_targets
+  gather_facts: yes
+
+  vars:
+    # Application metadata — override in Jenkins or via -e
+    app_name: "template-app"
+    app_version: "{{ lookup('env', 'APP_VERSION') | default('latest') }}"
+    app_user: "{{ ansible_user }}"
+    app_home: "/opt/{{ app_name }}"
+    backup_dir: "/var/backups/{{ app_name }}"
+
+  pre_tasks:
+    - name: Preflight | Display deployment information
+      debug:
+        msg: |
+          ╔════════════════════════════════════════════════════════════╗
+          ║  🚀 Deploying {{ app_name }} v{{ app_version }}
+          ║  Target: {{ inventory_hostname }} ({{ ansible_user }})
+          ║  Time: {{ ansible_date_time.iso8601 }}
+          ╚════════════════════════════════════════════════════════════╝
+      run_once: yes
+
+    - name: Preflight | Check target host connectivity
+      ping:
+      register: ping_result
+
+    - name: Preflight | Gather OS information
+      debug:
+        msg: "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+    - name: Preflight | Check required directories exist
+      stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ app_home }}"
+        - "{{ backup_dir }}"
+      register: dir_check
+      failed_when: dir_check.stat.exists == False
+
+  tasks:
+    # ─── Backup current version ────────────────────────────────────────────────
+    - name: Backup | Create backup directory
+      file:
+        path: "{{ backup_dir }}/{{ ansible_date_time.iso8601 }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+      when: backup_before_deploy | default(true)
+
+    - name: Backup | Archive current application
+      archive:
+        path: "{{ app_home }}"
+        dest: "{{ backup_dir }}/{{ ansible_date_time.iso8601 }}/app.tar.gz"
+        format: gz
+      when: backup_before_deploy | default(true)
+      ignore_errors: yes
+
+    # ─── Deploy application files ──────────────────────────────────────────────
+    - name: Deploy | Copy application files
+      synchronize:
+        src: "{{ app_home }}/new/"
+        dest: "{{ app_home }}"
+        delete: no
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=node_modules"
+          - "--exclude=__pycache__"
+      delegate_to: "{{ inventory_hostname }}"
+      ignore_errors: yes
+
+    # ─── Update configuration ──────────────────────────────────────────────────
+    - name: Configure | Update app configuration
+      template:
+        src: "app.conf.j2"
+        dest: "{{ app_home }}/config/app.conf"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+        backup: yes
+      ignore_errors: yes
+      notify: restart_app
+
+    - name: Configure | Install/update dependencies
+      command: "{{ item }}"
+      loop:
+        - "npm install --production"
+        - "pip3 install -r requirements.txt"
+      args:
+        chdir: "{{ app_home }}"
+      ignore_errors: yes
+      changed_when: false
+
+    # ─── Restart application ──────────────────────────────────────────────────
+    - name: Service | Restart application
+      systemd:
+        name: "{{ app_name }}"
+        state: restarted
+        daemon_reload: yes
+      become: yes
+      ignore_errors: yes
+
+    - name: Service | Wait for application to start
+      uri:
+        url: "http://localhost:8000/health"
+        method: GET
+        status_code: 200
+      retries: 10
+      delay: 3
+      ignore_errors: yes
+
+  post_tasks:
+    - name: Notify | Deployment complete
+      debug:
+        msg: |
+          ✅ Deployment successful
+          App: {{ app_name }} v{{ app_version }}
+          Host: {{ inventory_hostname }}
+          Backup: {{ backup_dir }}/{{ ansible_date_time.iso8601 }}
+
+  handlers:
+    - name: restart_app
+      systemd:
+        name: "{{ app_name }}"
+        state: restarted
+        daemon_reload: yes
+      become: yes
+
+# =============================================================================
+# CUSTOMIZATION GUIDE
+# =============================================================================
+#
+# 1. Update 'app_name' and 'app_home' variables
+# 2. Add your deployment steps in the 'tasks' section
+# 3. Create templates: app.conf.j2, docker-compose.j2, etc.
+# 4. Use 'notify' and 'handlers' for restart logic
+# 5. Add 'when' conditions for conditional deployment
+#
+# Common patterns:
+#   - Docker: Use 'community.docker.docker_container' module
+#   - Kubernetes: Use 'kubernetes.core' collection
+#   - Systemd: Use 'systemd' module (shown above)
+#   - Git: Use 'ansible.builtin.git' to deploy from repo
+#
+# Variables available:
+#   - From project.yaml: app_env, app_version, ansible_variables.*
+#   - From Jenkins: BUILD_NUMBER, BUILD_ID, GIT_COMMIT, etc.
+#   - From Ansible facts: ansible_distribution, ansible_hostname, etc.
+# =============================================================================

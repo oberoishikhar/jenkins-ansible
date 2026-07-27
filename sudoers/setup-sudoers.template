@@ -1,0 +1,73 @@
+# =============================================================================
+# Sudoers Template: SETUP PHASE
+# Jenkins + Ansible Deployment Hub — Iteration 1
+# =============================================================================
+#
+# PURPOSE:
+#   This file grants the MINIMUM sudo privileges needed to INSTALL and SET UP
+#   the deployment hub on a RHEL or Oracle Linux server.
+#
+#   Once setup is complete, this file SHOULD BE REMOVED.
+#   At runtime, the system does NOT need sudo.
+#
+# USAGE:
+#   1. Replace {{DEPLOY_USER}} with the actual username (e.g. deployuser)
+#   2. Copy to target: sudo visudo -f /etc/sudoers.d/jenkins-ansible-setup
+#      OR: sudo cp setup-sudoers.conf /etc/sudoers.d/jenkins-ansible-setup
+#   3. Verify: sudo visudo -c
+#   4. After setup completes: sudo rm /etc/sudoers.d/jenkins-ansible-setup
+#
+# SECURITY NOTES:
+#   - This file allows ONLY the 7 specific commands listed below
+#   - NOPASSWD means setup.sh can run without interactive sudo prompts
+#   - The 'requiretty' override allows running from non-interactive shells (scripts)
+#   - All commands are scoped to specific binaries — no shell access granted
+# =============================================================================
+
+# Allow sudo without a terminal (needed for scripted setup)
+Defaults:{{DEPLOY_USER}} !requiretty
+
+# Define command groups (each group is a specific, scoped operation)
+
+# Install Podman and networking dependencies
+Cmnd_Alias JENKINS_INSTALL_PODMAN = \
+    /usr/bin/dnf install -y podman slirp4netns fuse-overlayfs container-selinux, \
+    /usr/bin/dnf install -y podman, \
+    /usr/bin/dnf install -y slirp4netns, \
+    /usr/bin/dnf install -y fuse-overlayfs
+
+# Install RPMs from local files (offline install)
+Cmnd_Alias JENKINS_INSTALL_RPM = \
+    /usr/bin/dnf install -y /*/rpms/*.rpm, \
+    /usr/bin/rpm -ivh /*/rpms/*.rpm
+
+# Configure user namespace mappings (needed for rootless Podman)
+Cmnd_Alias JENKINS_SUBID = \
+    /usr/sbin/usermod --add-subuids 100000-165535 --add-subgids 100000-165535 {{DEPLOY_USER}}
+
+# Enable kernel user namespaces
+Cmnd_Alias JENKINS_SYSCTL = \
+    /usr/sbin/sysctl -p /etc/sysctl.d/80-userns.conf, \
+    /usr/bin/tee /etc/sysctl.d/80-userns.conf
+
+# Enable container service to run after user logout
+Cmnd_Alias JENKINS_LINGER = \
+    /usr/bin/loginctl enable-linger {{DEPLOY_USER}}
+
+# Load Docker/Podman image from tarball (offline install)
+Cmnd_Alias JENKINS_LOAD_IMAGE = \
+    /usr/bin/podman load -i /*/jenkins-ansible-bundle.tar.gz
+
+# Allow sudo for the specific install/setup operations only
+{{DEPLOY_USER}} ALL=(root) NOPASSWD: \
+    JENKINS_INSTALL_PODMAN, \
+    JENKINS_INSTALL_RPM, \
+    JENKINS_SUBID, \
+    JENKINS_SYSCTL, \
+    JENKINS_LINGER, \
+    JENKINS_LOAD_IMAGE
+
+# =============================================================================
+# ⚠️  REMOVE THIS FILE AFTER SETUP IS COMPLETE ⚠️
+# Command: sudo rm /etc/sudoers.d/jenkins-ansible-setup
+# =============================================================================

@@ -1,0 +1,90 @@
+# =============================================================================
+# Docker Compose — Jenkins + Ansible Deployment Hub
+# =============================================================================
+#
+# Usage:
+#   docker compose up -d          Start Jenkins in the background
+#   docker compose down           Stop Jenkins
+#   docker compose logs -f        Watch Jenkins logs
+#   docker compose restart        Restart Jenkins
+#
+# Configuration:
+#   Copy .env.example to .env and edit the values before starting.
+# =============================================================================
+
+services:
+  jenkins-ansible:
+    # The custom image built by setup.sh (contains Jenkins + Ansible)
+    image: jenkins-ansible:latest
+
+    # Container name — used in docker logs, docker exec, etc.
+    container_name: jenkins-ansible
+
+    # Always restart unless manually stopped
+    restart: unless-stopped
+
+    # ─── Ports ──────────────────────────────────────────────────────────────
+    ports:
+      - "${JENKINS_PORT:-8080}:8080"       # Jenkins Web UI
+      - "${AGENT_PORT:-50000}:50000"       # Jenkins build agents
+
+    # ─── Environment Variables ───────────────────────────────────────────────
+    environment:
+      # Admin credentials (change these! See .env.example)
+      - JENKINS_ADMIN_USER=${JENKINS_ADMIN_USER:-admin}
+      - JENKINS_ADMIN_PASSWORD=${JENKINS_ADMIN_PASSWORD:-changeme123}
+
+      # Jenkins URL (used in email notifications and build links)
+      - JENKINS_URL=${JENKINS_URL:-http://localhost:8080/}
+
+      # JVM memory settings — increase if Jenkins feels slow
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Xmx${JENKINS_MEM:-768}m -Xms256m
+
+      # Configuration as Code file location
+      - CASC_JENKINS_CONFIG=/var/jenkins-config/jenkins.yaml
+
+    # ─── Volumes ────────────────────────────────────────────────────────────
+    volumes:
+      # 📁 Jenkins data (jobs, build history, credentials) — MUST be persisted
+      - jenkins_home:/var/jenkins_home
+
+      # 📂 Your Ansible playbooks and project configs
+      #    Edit files in ./projects/ on your laptop, they appear instantly inside Jenkins
+      - ./projects:/var/projects:ro
+
+      # 🔑 SSH private keys for connecting to target hosts
+      #    Place <project-name>.pem files here
+      - ./ssh-keys:/var/ssh-keys:ro
+
+      # ⚙️  Jenkins configuration (JCasC)
+      #    Override defaults by editing ./jenkins-config/jenkins.yaml
+      - ./jenkins-config:/var/jenkins-config:ro
+
+      # 🚀 Groovy init scripts — run once on Jenkins startup
+      #    Creates seed job, initial setup etc.
+      - ./jenkins-config/init.groovy.d:/var/jenkins_home/init.groovy.d:ro
+
+    # ─── Health Check ────────────────────────────────────────────────────────
+    # Docker will wait for Jenkins to actually be ready before reporting healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s    # Jenkins takes ~60-90s to start; give it plenty of time
+
+    # ─── Logging ─────────────────────────────────────────────────────────────
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"     # Don't let logs fill up your disk
+        max-file: "5"       # Keep last 5 log files
+
+# ─── Named Volumes ──────────────────────────────────────────────────────────
+# jenkins_home is a Docker-managed volume (NOT a bind mount)
+# This keeps Jenkins data safe even if you move your project directory
+volumes:
+  jenkins_home:
+    name: jenkins-ansible-home
+    labels:
+      description: "Jenkins + Ansible Hub persistent data"

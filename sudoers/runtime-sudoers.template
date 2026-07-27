@@ -1,0 +1,82 @@
+# =============================================================================
+# Sudoers Template: ANSIBLE RUNTIME (Target Hosts)
+# Jenkins + Ansible Deployment Hub — Iteration 1
+# =============================================================================
+#
+# PURPOSE:
+#   This file grants the MINIMUM sudo privileges the Ansible deploy user
+#   needs on TARGET HOSTS to deploy applications.
+#
+#   Install this on each TARGET machine (not the Jenkins server).
+#   Customize the Cmnd_Alias to match exactly what your deploy needs.
+#
+# USAGE:
+#   1. Replace ALL {{PLACEHOLDERS}} with actual values
+#   2. Copy to target: sudo visudo -f /etc/sudoers.d/deploy-{{PROJECT_NAME}}
+#   3. Test:  sudo -u {{DEPLOY_USER}} sudo -l
+#
+# PRINCIPLE OF LEAST PRIVILEGE:
+#   Only list the SPECIFIC commands your deployment needs.
+#   Do NOT use ALL — that is equivalent to full root access.
+#
+# GENERATED PER PROJECT by add-project.sh
+# =============================================================================
+
+# Defaults
+Defaults:{{DEPLOY_USER}} !requiretty
+Defaults:{{DEPLOY_USER}} env_keep += "ANSIBLE_*"
+
+# =============================================================================
+# SECTION 1: Service Management
+# Allow starting/stopping/restarting specific application services
+# =============================================================================
+
+Cmnd_Alias DEPLOY_{{PROJECT_UPPER}}_SERVICE = \
+    /usr/bin/systemctl start {{SERVICE_NAME}}, \
+    /usr/bin/systemctl stop {{SERVICE_NAME}}, \
+    /usr/bin/systemctl restart {{SERVICE_NAME}}, \
+    /usr/bin/systemctl reload {{SERVICE_NAME}}, \
+    /usr/bin/systemctl enable {{SERVICE_NAME}}, \
+    /usr/bin/systemctl disable {{SERVICE_NAME}}, \
+    /usr/bin/systemctl status {{SERVICE_NAME}}
+
+# =============================================================================
+# SECTION 2: Application Files
+# Allow writing to the application's install directory
+# =============================================================================
+
+Cmnd_Alias DEPLOY_{{PROJECT_UPPER}}_FILES = \
+    /usr/bin/cp -r * {{DEPLOY_DIR}}/, \
+    /usr/bin/chown -R {{DEPLOY_USER}} {{DEPLOY_DIR}}, \
+    /usr/bin/chmod -R 755 {{DEPLOY_DIR}}, \
+    /usr/bin/mkdir -p {{DEPLOY_DIR}}, \
+    /usr/bin/rm -rf {{DEPLOY_DIR}}/old
+
+# =============================================================================
+# SECTION 3: Package Installation (if needed)
+# Uncomment ONLY if your deploy playbook installs packages
+# =============================================================================
+
+# Cmnd_Alias DEPLOY_{{PROJECT_UPPER}}_PKG = \
+#     /usr/bin/dnf install -y {{PACKAGE_NAME}}, \
+#     /usr/bin/dnf update -y {{PACKAGE_NAME}}
+
+# =============================================================================
+# Grant permissions to the deploy user
+# =============================================================================
+
+{{DEPLOY_USER}} ALL=(root) NOPASSWD: \
+    DEPLOY_{{PROJECT_UPPER}}_SERVICE, \
+    DEPLOY_{{PROJECT_UPPER}}_FILES
+    # Uncomment the line below if package installation is needed:
+    # DEPLOY_{{PROJECT_UPPER}}_PKG
+
+# =============================================================================
+# PLACEHOLDERS — replace all before using:
+#   {{DEPLOY_USER}}    → the SSH user Ansible connects as (e.g. deployuser)
+#   {{PROJECT_NAME}}   → project name in lowercase (e.g. webapp)
+#   {{PROJECT_UPPER}}  → project name in UPPERCASE (e.g. WEBAPP)
+#   {{SERVICE_NAME}}   → systemd service name (e.g. webapp.service)
+#   {{DEPLOY_DIR}}     → application install path (e.g. /opt/webapp)
+#   {{PACKAGE_NAME}}   → package to install if needed (e.g. nginx)
+# =============================================================================

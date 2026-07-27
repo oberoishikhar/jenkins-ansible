@@ -1,0 +1,100 @@
+# =============================================================================
+# Jenkins Configuration as Code (JCasC)
+# =============================================================================
+# This file automatically configures Jenkins on startup.
+# No UI clicking needed — all configuration is code.
+#
+# Reference: https://github.com/jenkinsci/configuration-as-code-plugin
+# =============================================================================
+
+jenkins:
+  # ─── System Configuration ────────────────────────────────────────────────
+  systemMessage: |
+    🚀 Jenkins + Ansible Deployment Hub
+    Multi-project CI/CD platform for infrastructure automation
+
+  mode: NORMAL
+  numExecutors: 2
+
+  # ─── URL Configuration ───────────────────────────────────────────────────
+  # Used in email notifications and build artifacts
+  url: ${JENKINS_URL,http://localhost:8080/}
+
+  # ─── Security Realm ──────────────────────────────────────────────────────
+  # Use Jenkins' built-in user database
+  securityRealm:
+    local:
+      allowsSignup: false
+
+  # ─── Authorization ───────────────────────────────────────────────────────
+  # Use matrix-auth for fine-grained permissions (fallback to permissive for offline)
+  authorizationStrategy:
+    permissive: {}
+
+  # ─── Credentials ──────────────────────────────────────────────────────────
+  # Credentials are managed via Jenkins UI or API (not hardcoded here)
+
+  # ─── Configure Global Pipeline Libraries ──────────────────────────────────
+  # Allows shared pipeline code across projects
+  globalLibraries:
+    libraries: []
+
+  # ─── Quiet Period ────────────────────────────────────────────────────────
+  # Wait N seconds before triggering new builds
+  quietPeriod: 5
+
+  # ─── Markup Formatter ────────────────────────────────────────────────────
+  # Allow ANSI colors in console output
+  markupFormatter:
+    rawHtml:
+      disableSyntaxHighlighting: false
+
+# =============================================================================
+# Credentials Configuration
+# =============================================================================
+# Note: SSH keys are added dynamically by add-project.sh via Jenkins API
+# This section remains empty — credentials are created at runtime.
+credentials:
+  system:
+    domainCredentials:
+      - credentials: []
+
+# =============================================================================
+# Jenkins Job Configuration
+# =============================================================================
+# The seed job (created in init.groovy.d) auto-generates project jobs
+# based on the projects/ directory structure.
+
+# =============================================================================
+# Unclassified Plugins
+# =============================================================================
+unclassified:
+  # ─── SSH Agent Configuration ─────────────────────────────────────────────
+  # Tells the SSH agent plugin where to find SSH keys
+  # Configuration handled by add-project.sh via API
+
+  # ─── Email Configuration ─────────────────────────────────────────────────
+  # Only basic SMTP — configure via Jenkins UI for your environment
+  mailer:
+    charset: "UTF-8"
+    useSMTPAuth: false
+    smtpHost: ""
+    smtpPort: 25
+    replyToAddress: "jenkins@example.com"
+
+  # ─── Slack Notifications (Optional) ───────────────────────────────────────
+  # Uncomment and configure if you want Slack integration
+  # slackNotifier:
+  #   botUser: false
+  #   baseUrl: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  #   teamDomain: "your-workspace"
+  #   room: "#deployments"
+
+# =============================================================================
+# Jenkins Configuration Reload
+# =============================================================================
+# Allow configuration changes via JCasC without full restart
+configScripts:
+  jenkins-system-message: |
+    jenkins:
+      systemMessage: "🚀 Jenkins + Ansible Deployment Hub"

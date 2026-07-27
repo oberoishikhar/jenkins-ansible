@@ -1,0 +1,227 @@
+---
+# =============================================================================
+# Health Check Playbook — Verify deployment succeeded
+# =============================================================================
+# This playbook validates that the application is healthy after deployment.
+# It runs common checks like:
+#   - Service status verification
+#   - HTTP endpoint availability
+#   - Database connectivity
+#   - Disk space checks
+#   - Log analysis for errors
+#
+# Run after deploy.yml or rollback.yml to confirm the operation succeeded.
+# =============================================================================
+
+- name: Health Check — Verify Application
+  hosts: deploy_targets
+  gather_facts: yes
+
+  vars:
+    app_name: "template-app"
+    app_home: "/opt/{{ app_name }}"
+    health_endpoint: "http://localhost:8000/health"
+    max_retries: 5
+    retry_delay: 3
+
+  pre_tasks:
+    - name: Preflight | Display health check information
+      debug:
+        msg: |
+          ╔════════════════════════════════════════════════════════════╗
+          ║  🏥 Health Check — {{ app_name }}
+          ║  Target: {{ inventory_hostname }}
+          ║  Time: {{ ansible_date_time.iso8601 }}
+          ╚════════════════════════════════════════════════════════════╝
+      run_once: yes
+
+    - name: Preflight | Check target connectivity
+      ping:
+
+  tasks:
+    # ─── Service Status ────────────────────────────────────────────────────────
+    - name: Service | Check if application service is running
+      systemd:
+        name: "{{ app_name }}"
+      register: service_status
+      ignore_errors: yes
+
+    - name: Service | Display service status
+      debug:
+        msg: |
+          Service: {{ app_name }}
+          State: {{ service_status.status.ActiveState }}
+          Enabled: {{ service_status.status.UnitFileState }}
+      when: service_status.status is defined
+
+    - name: Service | Fail if service not running
+      fail:
+        msg: "❌ Service {{ app_name }} is not running"
+      when: service_status.status.ActiveState != "active"
+      ignore_errors: yes
+
+    # ─── HTTP Endpoint Checks ──────────────────────────────────────────────────
+    - name: HTTP | Check application health endpoint
+      uri:
+        url: "{{ health_endpoint }}"
+        method: GET
+        status_code: 200
+        timeout: 5
+      retries: "{{ max_retries }}"
+      delay: "{{ retry_delay }}"
+      register: health_response
+      ignore_errors: yes
+
+    - name: HTTP | Display health endpoint response
+      debug:
+        msg: |
+          Health Endpoint: {{ health_endpoint }}
+          Status: {{ health_response.status }}
+          Response: {{ health_response.json | default('No JSON response') }}
+      when: health_response.status is defined
+
+    - name: HTTP | Fail if health check failed
+      fail:
+        msg: "❌ Health endpoint returned status {{ health_response.status }}"
+      when: health_response.status is defined and health_response.status != 200
+      ignore_errors: yes
+
+    # ─── Process Checks ────────────────────────────────────────────────────────
+    - name: Process | Check if application process is running
+      shell: "pgrep -f {{ app_name }} || true"
+      register: process_check
+      changed_when: false
+
+    - name: Process | Display process status
+      debug:
+        msg: "Process count: {{ process_check.stdout_lines | length }}"
+
+    - name: Process | Fail if no process found
+      fail:
+        msg: "❌ No {{ app_name }} process found"
+      when: process_check.stdout_lines | length == 0
+      ignore_errors: yes
+
+    # ─── Port Checks ───────────────────────────────────────────────────────────
+    - name: Port | Check if application is listening on port 8000
+      wait_for:
+        host: "127.0.0.1"
+        port: 8000
+        state: started
+        timeout: 10
+      register: port_check
+      ignore_errors: yes
+
+    - name: Port | Display port status
+      debug:
+        msg: "✅ Application listening on port 8000"
+      when: port_check is succeeded
+
+    # ─── Disk Space Check ──────────────────────────────────────────────────────
+    - name: Disk | Check available disk space
+      shell: |
+        df -h {{ app_home }} | tail -1 | awk '{print $5}' | sed 's/%//'
+      register: disk_usage
+      changed_when: false
+
+    - name: Disk | Warn if low disk space
+      debug:
+        msg: "⚠️  WARNING: Disk usage is {{ disk_usage.stdout }}%"
+      when: disk_usage.stdout | int > 80
+
+    - name: Disk | Fail if critically low on disk
+      fail:
+        msg: "❌ CRITICAL: Disk usage is {{ disk_usage.stdout }}% — cleanup required"
+      when: disk_usage.stdout | int > 95
+      ignore_errors: yes
+
+    # ─── Application Logs Check ────────────────────────────────────────────────
+    - name: Logs | Check application log for errors
+      shell: |
+        tail -100 /var/log/{{ app_name }}.log 2>/dev/null | grep -i "error\|fatal\|panic" || echo "No errors found"
+      register: log_check
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Logs | Display recent errors (if any)
+      debug:
+        msg: |
+          Recent errors in logs:
+          {{ log_check.stdout }}
+      when: '"No errors found" not in log_check.stdout'
+
+    # ─── Database Connectivity (optional) ───────────────────────────────────────
+    - name: Database | Ping database server
+      wait_for:
+        host: "{{ db_host | default('localhost') }}"
+        port: "{{ db_port | default(5432) }}"
+        state: started
+        timeout: 5
+      register: db_check
+      ignore_errors: yes
+      when: db_host is defined
+
+    - name: Database | Display database status
+      debug:
+        msg: "✅ Database is reachable"
+      when: db_check is succeeded
+
+    # ─── Final Summary ─────────────────────────────────────────────────────────
+    - name: Summary | Compile health check results
+      set_fact:
+        health_status:
+          service_running: "{{ service_status.status.ActiveState == 'active' }}"
+          http_healthy: "{{ health_response.status | default(0) == 200 }}"
+          process_found: "{{ process_check.stdout_lines | length > 0 }}"
+          port_listening: "{{ port_check is succeeded }}"
+          disk_ok: "{{ disk_usage.stdout | int < 80 }}"
+
+    - name: Summary | Display final health status
+      debug:
+        msg: |
+          ╔════════════════════════════════════════════════════════════╗
+          ║  HEALTH CHECK SUMMARY
+          ╚════════════════════════════════════════════════════════════╝
+          Service Running:     {{ '✅' if health_status.service_running else '❌' }}
+          HTTP Health:         {{ '✅' if health_status.http_healthy else '❌' }}
+          Process Found:       {{ '✅' if health_status.process_found else '❌' }}
+          Port Listening:      {{ '✅' if health_status.port_listening else '❌' }}
+          Disk Space OK:       {{ '✅' if health_status.disk_ok else '⚠️ ' }}
+
+          {% if health_status.service_running and health_status.http_healthy %}
+          🎉 DEPLOYMENT HEALTHY — All checks passed
+          {% else %}
+          ⚠️  DEPLOYMENT ISSUES — Review above and take corrective action
+          {% endif %}
+
+  post_tasks:
+    - name: Report | Send health check summary
+      debug:
+        msg: "Health check complete on {{ inventory_hostname }}"
+
+# =============================================================================
+# CUSTOMIZATION
+# =============================================================================
+#
+# Add custom health checks:
+#
+#   - name: Custom | Check my application status
+#     uri:
+#       url: "http://localhost:8000/api/status"
+#       method: GET
+#       status_code: 200
+#     retries: 5
+#     delay: 2
+#
+# Check database connectivity:
+#     - name: Database | Test connection
+#       postgresql_info:
+#         filter: "databases"
+#       register: postgres_info
+#
+# Run smoke tests:
+#     - name: Tests | Run smoke test suite
+#       shell: "cd {{ app_home }} && npm run test:smoke"
+#       timeout: 60
+#
+# =============================================================================

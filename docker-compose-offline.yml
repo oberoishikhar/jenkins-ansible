@@ -1,0 +1,87 @@
+version: '3.8'
+
+# ============================================================================
+# Docker Compose for Isolated Offline Jenkins-Ansible Testing
+# ============================================================================
+# This setup:
+# - Runs Jenkins + Ansible in containers
+# - Uses offline bundle (no internet downloads)
+# - Isolates networking (simulates air-gap)
+# - Accessible from Mac on localhost:8080
+# ============================================================================
+
+services:
+  jenkins-offline:
+    # Build from the pre-built image (from offline bundle)
+    image: jenkins-ansible:latest
+
+    container_name: jenkins-ansible-offline
+
+    # Resource limits
+    mem_limit: 2g
+    cpus: 2
+
+    # Port forwarding to Mac
+    ports:
+      - "8080:8080"      # Jenkins UI
+      - "50000:50000"    # Build agents
+
+    # Volume mounts for persistence
+    volumes:
+      # Jenkins home directory (persists jobs, configs, logs)
+      - jenkins-home:/var/jenkins_home
+
+      # Project files (for Ansible playbooks)
+      - ./projects:/var/jenkins_home/projects
+
+      # SSH keys for deployments
+      - ./ssh-keys:/var/jenkins_home/.ssh:ro
+
+      # Configuration files
+      - ./jenkins-config:/var/jenkins_config:ro
+
+    # Environment variables
+    environment:
+      # Jenkins configuration
+      JENKINS_OPTS: "--prefix=/ --httpPort=8080"
+      JAVA_OPTS: "-Xmx1g -Xms512m"
+
+      # Disable plugins update (offline)
+      PLUGINS_FORCE_UPGRADE: "false"
+
+      # Jenkins URL for this deployment
+      JENKINS_URL: "http://localhost:8080/"
+
+    # Network isolation (simulates air-gap)
+    networks:
+      - isolated
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+    # Keep container running
+    restart: unless-stopped
+
+    # Run as unprivileged user
+    user: "1000:1000"
+
+# Named volume for Jenkins data persistence
+volumes:
+  jenkins-home:
+    driver: local
+
+# Isolated network (no internet access)
+networks:
+  isolated:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-jenkins-offline
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          # No default gateway = no internet access

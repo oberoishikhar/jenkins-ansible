@@ -1,0 +1,31 @@
+# Minimal essential plugins for offline Jenkins + Ansible deployment
+# Only include plugins that are stable and have well-defined dependencies
+
+# Pipeline - core feature
+pipeline-model-definition:latest
+pipeline-stage-view:latest
+
+# Job DSL for auto-generating jobs from project folders
+job-dsl:latest
+
+# Ansible plugin (ESSENTIAL) - for running Ansible playbooks
+ansible:1.1
+
+# SSH credentials management (ESSENTIAL)
+ssh-agent:latest
+ssh-credentials:latest
+
+# Configuration as Code (ESSENTIAL) - configure Jenkins via YAML
+configuration-as-code:latest
+
+# Git support
+git:latest
+
+# Basic UI
+dark-theme:latest
+timestamper:latest
+
+# Utilities
+ws-cleanup:latest
+groovy:latest
+script-security:latest

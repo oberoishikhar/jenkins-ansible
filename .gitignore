@@ -1,0 +1,33 @@
+# Files that should NEVER be committed to git
+
+# ─── Secrets & Credentials ────────────────────────────────────────────────────
+.env                    # Contains admin password — NEVER commit
+ssh-keys/*.pem          # SSH private keys
+ssh-keys/*.key          # SSH private keys (alternate extension)
+*.pem                   # Any PEM key files
+
+# ─── Jenkins Data ─────────────────────────────────────────────────────────────
+jenkins_home/           # Jenkins build data, configs, plugins installed at runtime
+
+# ─── Offline Bundle Files ────────────────────────────────────────────────────
+*.tar.gz                # Docker image tarballs (too large for git)
+offline-bundle/         # Downloaded RPMs and pip wheels
+
+# ─── Build Artifacts & Logs ───────────────────────────────────────────────────
+.buildx/
+setup.log               # Setup execution log
+cleanup.log             # Cleanup execution log
+offline_build.log       # Build execution log
+
+# ─── Local Development State ──────────────────────────────────────────────────
+.vagrant/               # VM state and machine metadata
+.claude/                # Local Claude Code settings
+
+# ─── Container Runtime State ──────────────────────────────────────────────────
+podman/                 # Podman container and volume state
+
+# ─── OS Files ─────────────────────────────────────────────────────────────────
+.DS_Store               # macOS
+Thumbs.db               # Windows
+*.swp                   # Vim swap files
+*~                      # Backup files
