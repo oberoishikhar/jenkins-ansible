@@ -1,0 +1,32 @@
+[Unit]
+Description=Jenkins Ansible Deployment Hub
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/jenkins-ansible:latest
+ContainerName=jenkins-ansible
+PublishPort=8080:8080
+PublishPort=50000:50000
+Environment=JENKINS_ADMIN_USER=%E{JENKINS_ADMIN_USER}
+Environment=JENKINS_ADMIN_PASSWORD=%E{JENKINS_ADMIN_PASSWORD}
+Environment=JENKINS_URL=%E{JENKINS_URL}
+Environment=JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Xmx%E{JENKINS_MEM}m -Xms256m
+Environment=CASC_JENKINS_CONFIG=/var/jenkins-config/jenkins.yaml
+Volume=jenkins_home.volume:/var/jenkins_home
+Volume=%h/jenkins-ansible/projects:/var/projects:ro
+Volume=%h/jenkins-ansible/ssh-keys:/var/ssh-keys:ro
+Volume=%h/jenkins-ansible/jenkins-config:/var/jenkins-config:ro
+Volume=%h/jenkins-ansible/jenkins-config/init.groovy.d:/var/jenkins_home/init.groovy.d:ro
+HealthCmd=curl -fsS http://localhost:8080/login
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=5
+HealthStartPeriod=120s
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

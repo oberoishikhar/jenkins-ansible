@@ -95,16 +95,19 @@ RUN set -eux; \
 # ─── Configure SSH for Ansible ────────────────────────────────────────────────
 # Disable strict host key checking so Ansible can connect to new hosts
 # (Operators should add known_hosts entries for production security)
+# NOTE: uses printf instead of a heredoc (RUN ... <<EOF) because heredocs are
+# a BuildKit-only Dockerfile feature and are not supported by `podman build`
+# (buildah/imagebuilder), which this project's offline-bundle workflow relies on.
 RUN mkdir -p /var/jenkins_home/.ssh && \
-    cat >> /etc/ssh/ssh_config << 'EOF'
-
-# Jenkins-Ansible: added by Dockerfile
-Host *
-    StrictHostKeyChecking accept-new
-    ServerAliveInterval 60
-    ServerAliveCountMax 3
-    ConnectTimeout 30
-EOF
+    printf '%s\n' \
+        "" \
+        "# Jenkins-Ansible: added by Dockerfile" \
+        "Host *" \
+        "    StrictHostKeyChecking accept-new" \
+        "    ServerAliveInterval 60" \
+        "    ServerAliveCountMax 3" \
+        "    ConnectTimeout 30" \
+        >> /etc/ssh/ssh_config
 
 # ─── Install Jenkins Plugin Manager CLI ───────────────────────────────────────
 # The official Jenkins image ships with jenkins-plugin-cli built in.

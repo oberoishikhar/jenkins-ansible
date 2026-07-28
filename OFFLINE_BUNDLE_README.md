@@ -21,7 +21,12 @@
 - **Same OS/arch as target machine** ⚠️
 - Internet access
 - 20GB free disk space
-- Docker or Podman running
+- Docker or Podman installed and running **before** starting the build
+  (this script does NOT install a runtime for you — install it first):
+  ```bash
+  sudo dnf install -y podman slirp4netns fuse-overlayfs
+  podman --version
+  ```
 
 **Run:**
 ```bash

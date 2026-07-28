@@ -45,7 +45,12 @@ This document describes the complete process for building, transferring, and dep
 - **MUST match target architecture** (x86_64 or aarch64)
 - Internet connectivity (to download packages)
 - ~20 GB free disk space (for build artifacts)
-- Docker or Podman installed and running
+- Docker or Podman installed and running **before** running the build script
+  — `build-offline-bundle.sh` does NOT install a container runtime automatically:
+  ```bash
+  sudo dnf install -y podman slirp4netns fuse-overlayfs
+  podman --version   # confirm it works
+  ```
 - `dnf` package manager (for RPM downloads)
 
 ### Step 1: Clone the Project

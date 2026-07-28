@@ -183,13 +183,54 @@ validate_system() {
         fi
     fi
 
-    # Check dependencies
-    for cmd in docker podman dnf tar gzip; do
+    # Check container runtime (Docker or Podman) — required, not auto-installed by this script
+    if command -v docker &>/dev/null; then
+        log_ok "Container runtime: docker ($(docker --version 2>/dev/null | cut -d' ' -f3 | tr -d ','))"
+    elif command -v podman &>/dev/null; then
+        log_ok "Container runtime: podman ($(podman --version 2>/dev/null | awk '{print $3}'))"
+
+        # Rootless Podman needs subuid/subgid ranges, otherwise image pulls/builds
+        # fail with "insufficient UIDs or GIDs available in user namespace"
+        local current_user
+        current_user=$(whoami)
+        if [ "$current_user" != "root" ]; then
+            if grep -q "^${current_user}:" /etc/subuid 2>/dev/null && \
+               grep -q "^${current_user}:" /etc/subgid 2>/dev/null; then
+                log_ok "Rootless user namespaces: configured for ${current_user}"
+            else
+                log_warn "No /etc/subuid or /etc/subgid entry for ${current_user}"
+                log_warn "Configuring rootless user namespaces (requires sudo)..."
+                if sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$current_user"; then
+                    podman system migrate 2>/dev/null || true
+                    log_ok "User namespace mapping: configured"
+                else
+                    log_error "Could not configure user namespaces for rootless Podman"
+                    log_error "Run manually: sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 ${current_user}"
+                    log_error "Then: podman system migrate"
+                    exit 1
+                fi
+            fi
+        fi
+    else
+        log_error "No container runtime found (docker or podman required)"
+        log_error ""
+        log_error "This script does NOT install a container runtime automatically."
+        log_error "Install Podman before running this script:"
+        log_error "  sudo dnf install -y podman slirp4netns fuse-overlayfs"
+        log_error "Or Docker, per your organization's standard install method."
+        exit 1
+    fi
+
+    # Check other required commands
+    for cmd in dnf tar gzip; do
         if command -v "$cmd" &>/dev/null; then
             log_ok "Command: $cmd"
-            break  # Just need one container runtime
+        else
+            log_error "Required command not found: $cmd"
+            exit 1
         fi
     done
+
 
     # Check disk space
     local avail_gb
@@ -246,13 +287,19 @@ build_image() {
     log "Using runtime: ${runtime}"
     log "Building for: linux/${ARCH}"
 
+    local build_log="${BUNDLE_DIR}/image_build.log"
+    log "Streaming build output live (full log: ${build_log})"
+    echo ""
+
     if $runtime build \
         --tag "${IMAGE_NAME}:${IMAGE_TAG}" \
         --progress=plain \
-        "${SCRIPT_DIR}" 2>&1 | tail -20; then
+        "${SCRIPT_DIR}" 2>&1 | tee "${build_log}"; then
+        echo ""
         log_ok "Image built successfully: ${IMAGE_NAME}:${IMAGE_TAG}"
     else
-        log_error "Image build failed"
+        echo ""
+        log_error "Image build failed — see ${build_log} for full details"
         exit 1
     fi
 
