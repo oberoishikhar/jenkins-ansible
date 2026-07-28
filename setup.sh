@@ -638,6 +638,7 @@ build_image() {
         # Podman build
         log_doing "Building image with Podman for linux/${ARCH}..."
         if podman build \
+            --network host \
             --platform "linux/${ARCH}" \
             --tag "${IMAGE_NAME}:${IMAGE_TAG}" \
             "$SCRIPT_DIR" 2>&1 | tee -a "$LOG_FILE"; then
